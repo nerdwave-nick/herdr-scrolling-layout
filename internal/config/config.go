@@ -1,8 +1,8 @@
 // Package config reads the plugin's config.toml from HERDR_PLUGIN_CONFIG_DIR.
 //
-// Only a flat subset of TOML is understood: `key = true|false` lines, with
-// `#` comments and blank lines. That is all the plugin needs, and it keeps the
-// module dependency-free.
+// Only a flat subset of TOML is understood: `key = true|false` and
+// `key = <number>` lines, with `#` comments and blank lines. That is all the
+// plugin needs, and it keeps the module dependency-free.
 package config
 
 import (
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -29,6 +30,9 @@ type Config struct {
 	CrossWorkspaces bool
 	// CrossTabs: left/right at a tab's edge continues into the adjacent tab.
 	CrossTabs bool
+	// NewWindowRatio is the share of the focused pane that new-window gives
+	// the new pane (0.1 to 0.9).
+	NewWindowRatio float64
 }
 
 // Default returns the default configuration.
@@ -39,6 +43,7 @@ func Default() Config {
 		CleanupEmptyWorkspaces: true,
 		CrossWorkspaces:        true,
 		CrossTabs:              true,
+		NewWindowRatio:         0.5,
 	}
 }
 
@@ -66,12 +71,19 @@ func Load() (Config, error) {
 }
 
 func parse(f *os.File, path string, cfg *Config) error {
-	fields := map[string]*bool{
+	bools := map[string]*bool{
 		"empty_workspace_below":    &cfg.EmptyWorkspaceBelow,
 		"empty_workspace_above":    &cfg.EmptyWorkspaceAbove,
 		"cleanup_empty_workspaces": &cfg.CleanupEmptyWorkspaces,
 		"cross_workspaces":         &cfg.CrossWorkspaces,
 		"cross_tabs":               &cfg.CrossTabs,
+	}
+	type bounded struct {
+		dst      *float64
+		min, max float64
+	}
+	floats := map[string]bounded{
+		"new_window_ratio": {&cfg.NewWindowRatio, 0.1, 0.9},
 	}
 	sc := bufio.NewScanner(f)
 	for n := 1; sc.Scan(); n++ {
@@ -88,18 +100,26 @@ func parse(f *os.File, path string, cfg *Config) error {
 			return fmt.Errorf("%s:%d: expected key = value", path, n)
 		}
 		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
-		dst, known := fields[key]
-		if !known {
-			return fmt.Errorf("%s:%d: unknown key %q", path, n, key)
+		if dst, ok := bools[key]; ok {
+			switch val {
+			case "true":
+				*dst = true
+			case "false":
+				*dst = false
+			default:
+				return fmt.Errorf("%s:%d: %s must be true or false", path, n, key)
+			}
+			continue
 		}
-		switch val {
-		case "true":
-			*dst = true
-		case "false":
-			*dst = false
-		default:
-			return fmt.Errorf("%s:%d: %s must be true or false", path, n, key)
+		if b, ok := floats[key]; ok {
+			v, err := strconv.ParseFloat(val, 64)
+			if err != nil || v < b.min || v > b.max {
+				return fmt.Errorf("%s:%d: %s must be a number from %g to %g", path, n, key, b.min, b.max)
+			}
+			*b.dst = v
+			continue
 		}
+		return fmt.Errorf("%s:%d: unknown key %q", path, n, key)
 	}
 	return sc.Err()
 }

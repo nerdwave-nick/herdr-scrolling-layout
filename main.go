@@ -8,6 +8,7 @@
 //	move  left|right|up|down
 //	maximize-column
 //	fullscreen-window
+//	new-window
 //
 // `keys` prints keybinding config for ~/.config/herdr/config.toml.
 package main
@@ -62,6 +63,8 @@ func run(args []string) error {
 		return act(func(ctx context.Context, n *nav.Nav) error { return n.MaximizeColumn(ctx) })
 	case "fullscreen-window":
 		return act(func(ctx context.Context, n *nav.Nav) error { return n.FullscreenWindow(ctx) })
+	case "new-window":
+		return act(func(ctx context.Context, n *nav.Nav) error { return n.NewWindow(ctx) })
 	}
 	return usage()
 }
@@ -94,7 +97,7 @@ func act(fn func(context.Context, *nav.Nav) error) error {
 func usage() error {
 	return fmt.Errorf(`usage:
   herdr-scrolling-layout focus|move left|right|up|down
-  herdr-scrolling-layout maximize-column|fullscreen-window
+  herdr-scrolling-layout maximize-column|fullscreen-window|new-window
   herdr-scrolling-layout keys [-mod alt] [-keys h,j,k,l]`)
 }
 
@@ -104,6 +107,7 @@ func keys(args []string) error {
 	mod := fs.String("mod", "alt", `modifier for all bindings, e.g. "alt", "ctrl+alt", or "prefix" for prefix+key`)
 	dirKeys := fs.String("keys", "h,j,k,l", "keys for left,down,up,right")
 	full := fs.String("fullscreen", "f", "key for maximize-column (shift+key toggles fullscreen-window)")
+	newKey := fs.String("new", "t", "key for new-window")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -131,5 +135,6 @@ func keys(args []string) error {
 	}
 	emit(chord(false, *full), "maximize-column", "toggle maximize column")
 	emit(chord(true, *full), "fullscreen-window", "toggle fullscreen window")
+	emit(chord(false, *newKey), "new-window", "new window (new tab when maximized)")
 	return nil
 }

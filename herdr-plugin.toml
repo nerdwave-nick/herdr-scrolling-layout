@@ -67,3 +67,9 @@ id = "fullscreen-window"
 title = "Toggle fullscreen window"
 contexts = ["workspace"]
 command = ["./bin/herdr-scrolling-layout", "fullscreen-window"]
+
+[[actions]]
+id = "new-window"
+title = "New window (new tab when maximized)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "new-window"]

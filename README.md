@@ -19,6 +19,8 @@ niri-style keyboard navigation for [Herdr](https://herdr.dev).
 - **maximize-column** lifts the focused column into its own tab right after the
   current one (a 2x2 becomes full-width 1-over-1). Toggle again to put it back.
 - **fullscreen-window** does the same for the focused pane alone.
+- **new-window** opens a pane to the right of the focused one (50% of it by
+  default). In a maximized/fullscreen tab it opens a new tab right after it.
 
 Restores are exact: the lifted tree is re-inserted at its recorded split with
 the original ratio, and processes keep running (`pane.move` never restarts
@@ -62,6 +64,7 @@ empty_workspace_above = false    # niri's empty-workspace-above-first
 cleanup_empty_workspaces = true  # remove a created workspace you leave untouched
 cross_tabs = true                # left/right continues into adjacent tabs
 cross_workspaces = true          # up/down continues into adjacent workspaces
+new_window_ratio = 0.5           # share of the focused pane a new window takes
 ```
 
 ## Development

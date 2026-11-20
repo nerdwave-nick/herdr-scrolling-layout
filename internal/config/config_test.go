@@ -31,17 +31,18 @@ func TestParse(t *testing.T) {
 # niri: empty-workspace-above-first
 empty_workspace_above = true   # trailing comment
 cross_tabs=false
+new_window_ratio = 0.6
 `)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.EmptyWorkspaceAbove || c.CrossTabs || !c.EmptyWorkspaceBelow {
+	if !c.EmptyWorkspaceAbove || c.CrossTabs || !c.EmptyWorkspaceBelow || c.NewWindowRatio != 0.6 {
 		t.Fatalf("got %+v", c)
 	}
 }
 
 func TestErrors(t *testing.T) {
-	for _, body := range []string{"nope = true", "cross_tabs = yes", "cross_tabs"} {
+	for _, body := range []string{"nope = true", "cross_tabs = yes", "cross_tabs", "new_window_ratio = 1.5", "new_window_ratio = half"} {
 		if _, err := load(t, body); err == nil || !strings.Contains(err.Error(), "config.toml:1") {
 			t.Errorf("%q: want line-numbered error, got %v", body, err)
 		}

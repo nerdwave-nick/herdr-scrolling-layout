@@ -404,3 +404,32 @@ func TestEmptySlotKeptAfterCommand(t *testing.T) {
 		t.Fatalf("used slot was removed: %v", ids)
 	}
 }
+
+func TestNewWindow(t *testing.T) {
+	f := setup(t)
+	ws, t1, a := f.workspace()
+	f.n.Cfg.NewWindowRatio = 0.3
+	f.focus(a)
+	f.must(f.n.NewWindow(f.ctx))
+	b := f.focused()
+	if b.TabID != t1 || b.PaneID == a {
+		t.Fatalf("new window %+v, want a new pane in %s", b, t1)
+	}
+	r := f.rects(a)
+	if got := float64(r[b.PaneID].Width) / float64(r[a].Width+r[b.PaneID].Width); math.Abs(got-0.3) > 0.05 {
+		t.Fatalf("new pane share %.2f, want 0.3 (%+v)", got, r)
+	}
+	if r[b.PaneID].X <= r[a].X {
+		t.Fatalf("new pane not to the right: %+v", r)
+	}
+
+	// In a maximized tab, new-window opens a tab right after it instead.
+	f.focus(a)
+	f.must(f.n.MaximizeColumn(f.ctx))
+	lifted := f.focused().TabID
+	f.must(f.n.NewWindow(f.ctx))
+	tabs := f.tabIDs(ws)
+	if len(tabs) != 3 || tabs[1] != lifted || tabs[2] != f.focused().TabID {
+		t.Fatalf("tabs %v, lifted %s, focused tab %s", tabs, lifted, f.focused().TabID)
+	}
+}

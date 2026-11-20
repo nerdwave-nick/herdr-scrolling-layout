@@ -376,3 +376,31 @@ func TestRoundTripUnevenRatios(t *testing.T) {
 		f.wantFocus(tc.focus)
 	}
 }
+
+// A slot where a command ran (and finished) is in use: leaving it must not
+// remove it, even though its shell is idle again.
+func TestEmptySlotKeptAfterCommand(t *testing.T) {
+	f := setup(t)
+	_, _, a := f.workspace()
+	f.focus(a)
+
+	f.must(f.n.Focus(f.ctx, layout.Down)) // creates the empty slot
+	slot := f.focused()
+	if len(f.workspaceIDs()) != 2 {
+		t.Fatalf("no slot created: %v", f.workspaceIDs())
+	}
+	_, err := f.c.PaneSendInput(f.ctx, api.PaneSendInputParams{PaneID: slot.PaneID, Text: "echo slot-used", Keys: []string{"enter"}})
+	f.must(err)
+	_, err = f.c.PaneWaitForOutput(f.ctx, api.PaneWaitForOutputParams{
+		PaneID: slot.PaneID, Source: api.ReadSourceVisible, TimeoutMs: 5000,
+		Match: api.OutputMatch{Value: api.OutputMatchSubstring{Value: "slot-used"}},
+	})
+	f.must(err)
+	f.waitShellIdle(slot.PaneID)
+
+	f.must(f.n.Focus(f.ctx, layout.Up))
+	f.wantFocus(a)
+	if ids := f.workspaceIDs(); len(ids) != 2 || ids[1] != slot.WorkspaceID {
+		t.Fatalf("used slot was removed: %v", ids)
+	}
+}

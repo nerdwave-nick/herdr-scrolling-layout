@@ -14,9 +14,13 @@ package nav
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	herdr "github.com/nerdwave-nick/herdr-go"
 	"github.com/nerdwave-nick/herdr-go/api"
@@ -213,7 +217,7 @@ func (n *Nav) focusAdjacentWorkspace(ctx context.Context, wsID string, d layout.
 	}
 	j := step(i, d)
 	if j < 0 || j >= len(wss) {
-		_, err := n.emptySlot(ctx, wss[i], d)
+		_, err := n.emptySlot(ctx, wss[i], d, true)
 		return err
 	}
 	if _, err := n.C.WorkspaceFocus(ctx, api.WorkspaceTarget{WorkspaceID: wss[j].WorkspaceID}); err != nil {
@@ -225,12 +229,13 @@ func (n *Nav) focusAdjacentWorkspace(ctx context.Context, wsID string, d layout.
 
 // emptySlot creates a fresh workspace past the end of the stack in d, if
 // configured, and focuses it. It never stacks a second empty slot onto one
-// the plugin already created.
-func (n *Nav) emptySlot(ctx context.Context, cur api.WorkspaceInfo, d layout.Dir) (string, error) {
+// the plugin already created. With snapshot, it records the settled screen
+// so the slot can be removed again if left untouched.
+func (n *Nav) emptySlot(ctx context.Context, cur api.WorkspaceInfo, d layout.Dir, snapshot bool) (string, error) {
 	if (d == layout.Down && !n.Cfg.EmptyWorkspaceBelow) || (d == layout.Up && !n.Cfg.EmptyWorkspaceAbove) {
 		return "", nil
 	}
-	if n.State.CreatedWorkspaces[cur.WorkspaceID] && n.pristine(ctx, cur.WorkspaceID) {
+	if _, ok := n.State.EmptySlots[cur.WorkspaceID]; ok && n.untouched(ctx, cur.WorkspaceID, false) {
 		return "", nil // already sitting in the empty slot
 	}
 	r, err := n.C.WorkspaceCreate(ctx, api.WorkspaceCreateParams{Focus: true, SourceWorkspaceID: cur.WorkspaceID})
@@ -243,13 +248,70 @@ func (n *Nav) emptySlot(ctx context.Context, cur api.WorkspaceInfo, d layout.Dir
 			return id, err
 		}
 	}
-	n.State.CreatedWorkspaces[id] = true
+	slot := state.EmptySlot{Pane: r.RootPane.PaneID}
+	if snapshot {
+		slot.Screen = n.settledScreen(ctx, slot.Pane)
+	}
+	n.State.EmptySlots[id] = slot
 	n.cleanup(ctx, cur.WorkspaceID)
 	return id, nil
 }
 
-// pristine reports whether a workspace still holds one idle shell.
-func (n *Nav) pristine(ctx context.Context, wsID string) bool {
+// settledScreen waits for a new shell to finish drawing its prompt and
+// returns a hash of the visible text, or "" if it does not settle in time.
+func (n *Nav) settledScreen(ctx context.Context, pane string) string {
+	deadline := time.Now().Add(settleTimeout)
+	prev := ""
+	for time.Now().Before(deadline) {
+		if n.shellForeground(ctx, pane) {
+			h := n.screenHash(ctx, pane)
+			if h != "" && h == prev {
+				return h // unchanged across two reads: settled
+			}
+			prev = h
+		}
+		time.Sleep(settleInterval)
+	}
+	return ""
+}
+
+const (
+	settleTimeout  = 2 * time.Second
+	settleInterval = 60 * time.Millisecond
+)
+
+// screenHash hashes the pane's visible text; "" if empty or unreadable.
+func (n *Nav) screenHash(ctx context.Context, pane string) string {
+	r, err := n.C.PaneRead(ctx, api.PaneReadParams{PaneID: pane, Source: api.ReadSourceVisible})
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimSpace(r.Read.Text)
+	if text == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+func (n *Nav) shellForeground(ctx context.Context, pane string) bool {
+	pi, err := n.C.PaneProcessInfo(ctx, api.PaneProcessInfoParams{PaneID: pane})
+	if err != nil {
+		return false
+	}
+	p := pi.ProcessInfo
+	return p.ShellPID != 0 && p.ForegroundProcessGroupID == p.ShellPID
+}
+
+// untouched reports whether a plugin-created workspace still holds only its
+// initial shell. With strict, the screen must also be unchanged since it was
+// created, so any command run in it (even one that has finished) counts as
+// touching it. Without a snapshot, strict is never satisfied.
+func (n *Nav) untouched(ctx context.Context, wsID string, strict bool) bool {
+	slot, ok := n.State.EmptySlots[wsID]
+	if !ok {
+		return false
+	}
 	ws, err := n.C.WorkspaceGet(ctx, api.WorkspaceTarget{WorkspaceID: wsID})
 	if err != nil || ws.Workspace.TabCount != 1 || ws.Workspace.PaneCount != 1 {
 		return false
@@ -258,31 +320,31 @@ func (n *Nav) pristine(ctx context.Context, wsID string) bool {
 	if err != nil {
 		return false
 	}
-	leaves := layout.Leaves(root)
-	if len(leaves) != 1 {
+	if leaves := layout.Leaves(root); len(leaves) != 1 || leaves[0] != slot.Pane {
 		return false
 	}
-	pi, err := n.C.PaneProcessInfo(ctx, api.PaneProcessInfoParams{PaneID: leaves[0]})
-	if err != nil {
+	if !n.shellForeground(ctx, slot.Pane) {
 		return false
 	}
-	p := pi.ProcessInfo
-	return p.ShellPID != 0 && p.ForegroundProcessGroupID == p.ShellPID
+	if !strict {
+		return true
+	}
+	return slot.Screen != "" && n.screenHash(ctx, slot.Pane) == slot.Screen
 }
 
 // cleanup closes a plugin-created workspace that was left untouched, like
 // niri dropping an empty workspace you navigate away from.
 func (n *Nav) cleanup(ctx context.Context, wsID string) {
-	if !n.State.CreatedWorkspaces[wsID] {
+	if _, ok := n.State.EmptySlots[wsID]; !ok {
 		return
 	}
-	if n.Cfg.CleanupEmptyWorkspaces && n.pristine(ctx, wsID) {
+	if n.Cfg.CleanupEmptyWorkspaces && n.untouched(ctx, wsID, true) {
 		if _, err := n.C.WorkspaceClose(ctx, api.WorkspaceCloseParams{WorkspaceID: wsID}); err != nil {
 			return
 		}
 	}
 	// Closed, or the user started using it: either way no longer ours.
-	delete(n.State.CreatedWorkspaces, wsID)
+	delete(n.State.EmptySlots, wsID)
 }
 
 // ---- move -----------------------------------------------------------------
@@ -383,11 +445,11 @@ func (n *Nav) moveAcrossWorkspaces(ctx context.Context, l api.PaneLayoutSnapshot
 	if len(l.Panes) <= 1 && n.lastPaneOfWorkspace(ctx, l.WorkspaceID) {
 		return nil // moving the only window of a workspace into a new one is a no-op
 	}
-	wsID, err := n.emptySlot(ctx, wss[i], d)
+	wsID, err := n.emptySlot(ctx, wss[i], d, false)
 	if err != nil || wsID == "" {
 		return err
 	}
-	delete(n.State.CreatedWorkspaces, wsID) // it receives a window: not empty
+	delete(n.State.EmptySlots, wsID) // it receives a window: not empty
 	ws, err := n.C.WorkspaceGet(ctx, api.WorkspaceTarget{WorkspaceID: wsID})
 	if err != nil {
 		return err

@@ -30,12 +30,23 @@ type Lift struct {
 	Placement   layout.Placement `json:"placement"`
 }
 
+// EmptySlot remembers how a freshly created workspace looked, so the plugin
+// only removes it again if the user never touched it.
+type EmptySlot struct {
+	// Pane is the workspace's initial shell pane.
+	Pane string `json:"pane"`
+	// Screen is a hash of the pane's visible text once the shell prompt had
+	// settled. Empty means no snapshot was taken; such a slot is never
+	// removed automatically.
+	Screen string `json:"screen"`
+}
+
 // State is the persisted plugin state.
 type State struct {
 	// Lifts maps the lifted tab id to its origin.
 	Lifts map[string]Lift `json:"lifts"`
-	// CreatedWorkspaces are empty-slot workspaces the plugin made.
-	CreatedWorkspaces map[string]bool `json:"created_workspaces"`
+	// EmptySlots are the empty workspaces the plugin created, by workspace id.
+	EmptySlots map[string]EmptySlot `json:"empty_slots"`
 }
 
 // Store is a locked handle on the state file. Call Close when done.
@@ -47,7 +58,7 @@ type Store struct {
 
 // Memory returns an empty in-memory store, for tests.
 func Memory() *Store {
-	return &Store{State: State{Lifts: map[string]Lift{}, CreatedWorkspaces: map[string]bool{}}}
+	return &Store{State: State{Lifts: map[string]Lift{}, EmptySlots: map[string]EmptySlot{}}}
 }
 
 // Open locks and loads the state file for this Herdr server. Without
@@ -55,7 +66,7 @@ func Memory() *Store {
 func Open() (*Store, error) {
 	s := &Store{}
 	s.Lifts = map[string]Lift{}
-	s.CreatedWorkspaces = map[string]bool{}
+	s.EmptySlots = map[string]EmptySlot{}
 	dir := os.Getenv("HERDR_PLUGIN_STATE_DIR")
 	if dir == "" {
 		return s, nil
@@ -82,8 +93,8 @@ func Open() (*Store, error) {
 	if s.Lifts == nil {
 		s.Lifts = map[string]Lift{}
 	}
-	if s.CreatedWorkspaces == nil {
-		s.CreatedWorkspaces = map[string]bool{}
+	if s.EmptySlots == nil {
+		s.EmptySlots = map[string]EmptySlot{}
 	}
 	return s, nil
 }

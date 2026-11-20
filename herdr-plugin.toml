@@ -1,0 +1,69 @@
+id = "herdr-scrolling-layout"
+name = "Scrolling Layout"
+version = "0.1.0"
+min_herdr_version = "0.9.5"
+description = "niri-style keyboard navigation: workspaces stack vertically, tabs form a horizontal strip, panes are windows"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["go", "build", "-trimpath", "-o", "bin/herdr-scrolling-layout", "."]
+
+[[actions]]
+id = "focus-left"
+title = "Focus left (crosses into previous tab)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "focus", "left"]
+
+[[actions]]
+id = "focus-right"
+title = "Focus right (crosses into next tab)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "focus", "right"]
+
+[[actions]]
+id = "focus-up"
+title = "Focus up (crosses into previous workspace)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "focus", "up"]
+
+[[actions]]
+id = "focus-down"
+title = "Focus down (crosses into next workspace)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "focus", "down"]
+
+[[actions]]
+id = "move-left"
+title = "Move window left (crosses into previous tab)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "move", "left"]
+
+[[actions]]
+id = "move-right"
+title = "Move window right (crosses into next tab)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "move", "right"]
+
+[[actions]]
+id = "move-up"
+title = "Move window up (crosses into previous workspace)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "move", "up"]
+
+[[actions]]
+id = "move-down"
+title = "Move window down (crosses into next workspace)"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "move", "down"]
+
+[[actions]]
+id = "maximize-column"
+title = "Toggle maximize column"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "maximize-column"]
+
+[[actions]]
+id = "fullscreen-window"
+title = "Toggle fullscreen window"
+contexts = ["workspace"]
+command = ["./bin/herdr-scrolling-layout", "fullscreen-window"]
